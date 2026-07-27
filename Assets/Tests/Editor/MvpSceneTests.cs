@@ -75,5 +75,39 @@ namespace MechaChameleon.Tests
             Assert.AreEqual(4, stroke.Radius);
             Assert.AreEqual(17, stroke.Sequence);
         }
+
+        [Test]
+        public void MvpSceneContainsCompleteUiDesign()
+        {
+            EditorSceneManager.OpenScene("Assets/Scenes/Mvp.unity");
+
+            var canvas = GameObject.Find("Game UI Canvas");
+            Assert.NotNull(canvas);
+            Assert.NotNull(Object.FindFirstObjectByType<GameUiController>());
+
+            var requiredScreens = new[]
+            {
+                "Menu Background",
+                "HomePanel",
+                "CreateRoomPanel",
+                "JoinRoomPanel",
+                "RoomPanel",
+                "OptionsPanel",
+                "GameHud",
+                "PasswordModal",
+                "ResultOverlay"
+            };
+
+            foreach (var screen in requiredScreens)
+                Assert.NotNull(canvas.transform.Find(screen), $"Missing UI design screen: {screen}");
+
+            var background = AssetDatabase.LoadAssetAtPath<Sprite>(
+                "Assets/UI/Generated/menu_waterfront_background.png");
+            var button = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/UI/Generated/wood_button.png");
+            var panel = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/UI/Generated/wood_panel.png");
+            Assert.NotNull(background);
+            Assert.NotNull(button);
+            Assert.NotNull(panel);
+        }
     }
 }

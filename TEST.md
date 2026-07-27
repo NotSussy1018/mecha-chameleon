@@ -10,12 +10,13 @@
 
 파일: `Assets/Tests/Editor/MvpSceneTests.cs`
 
-현재 4개:
+현재 5개:
 
 1. Mvp 씬에 NetworkManager, RoomConnector, RoundManager, HUD와 네트워크 프리팹 등록이 있는지
 2. 씬에 미리 배치된 ChameleonPlayer가 없는지
 3. 플레이어 프리팹의 Head/Body UV paint collider가 올바른지
 4. PaintStroke UV와 RGB 압축이 허용 오차 안인지
+5. Home, Create Room, Join Room, Room, Options, HUD, modal과 생성 UI sprite가 씬에 있는지
 
 ### PlayMode
 
@@ -34,7 +35,7 @@
 9. 낙하 후 복귀
 10. 페인트 초기화, 색상, 브러시, 카메라 orbit, persistence, Hunt 페인팅
 
-기준선은 EditMode `4/4`, PlayMode `10/10` 통과다.
+기준선은 EditMode `5/5`, PlayMode `10/10` 통과다.
 
 ## 3. Unity Test Runner 실행
 
@@ -203,4 +204,3 @@ UI의 색, 정렬, 카메라 가림, 조명은 자동 테스트만으로 완료 
 - 수정 후 관련 자동 테스트가 통과했다.
 - 호스트와 클라이언트 양쪽에서 수동 확인했다.
 - 다른 phase와 역할에서 부작용이 없는지 확인했다.
-
