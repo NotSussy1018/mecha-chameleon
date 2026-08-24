@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using MechaChameleon.Rooms;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -23,12 +24,18 @@ namespace MechaChameleon
         [SerializeField] private Transform hunterSpawnPoint;
         [SerializeField] private Transform hunterPlatform;
         [SerializeField] private Vector3 hunterPlatformSize = DefaultHunterPlatformSize;
+        [SerializeField] private RoomModule[] roomModules = { };
+        [SerializeField] private int startingRoomIndex;
         [SerializeField] private float paintSeconds = 30f;
         [SerializeField] private float huntSeconds = 60f;
+        [SerializeField] private float resultSeconds = 3f;
 
         public NetworkVariable<GamePhase> Phase { get; } = new(GamePhase.Lobby);
         public NetworkVariable<double> PhaseEndsAt { get; } = new(0);
         public NetworkVariable<bool> HidersWonLastRound { get; } = new(false);
+        public NetworkVariable<byte> ActiveRoomIndex { get; } = new(0);
+        public float ResultSeconds => resultSeconds;
+        public RoomModule ActiveRoom => GetRoomModule(ActiveRoomIndex.Value);
 
         readonly Dictionary<ulong, ChameleonPlayer> players = new();
         readonly List<ChameleonPlayer> practiceHiders = new();
@@ -38,6 +45,12 @@ namespace MechaChameleon
         public override void OnNetworkSpawn()
         {
             Instance = this;
+            GameDiagnostics.Info("round", "manager_spawned",
+                $"isServer={IsServer} isClient={IsClient} networkObjectId={NetworkObjectId}");
+            ActiveRoomIndex.OnValueChanged += OnActiveRoomChanged;
+            if (IsServer && roomModules != null && roomModules.Length > 0)
+                ActiveRoomIndex.Value = (byte)Mathf.Clamp(startingRoomIndex, 0, Mathf.Min(255, roomModules.Length - 1));
+            ApplyRoomActivation(ActiveRoomIndex.Value);
             EnsureHunterPlatform();
             EnsureRoomSpawns();
 
@@ -51,7 +64,13 @@ namespace MechaChameleon
 
         public override void OnNetworkDespawn()
         {
+            GameDiagnostics.Info("round", "manager_despawned",
+                $"isServer={IsServer} players={players.Count} practiceHiders={practiceHiders.Count}");
+            ActiveRoomIndex.OnValueChanged -= OnActiveRoomChanged;
             if (Instance == this) Instance = null;
+            players.Clear();
+            practiceHiders.Clear();
+
             if (!IsServer || NetworkManager.Singleton == null) return;
 
             NetworkManager.Singleton.OnClientConnectedCallback -= SpawnPlayer;
@@ -65,6 +84,10 @@ namespace MechaChameleon
                 BeginHunt();
             else if (Phase.Value == GamePhase.Hunt && NetworkManager.ServerTime.Time >= PhaseEndsAt.Value)
                 EndRound(hidersWon: true);
+            else if (Phase.Value == GamePhase.Result &&
+                     PhaseEndsAt.Value > 0 &&
+                     NetworkManager.ServerTime.Time >= PhaseEndsAt.Value)
+                ResetToLobby();
         }
 
         public int RemainingSeconds
@@ -100,6 +123,8 @@ namespace MechaChameleon
             SendPlayersToPaintPositions();
             Phase.Value = GamePhase.Paint;
             PhaseEndsAt.Value = NetworkManager.ServerTime.Time + paintSeconds;
+            GameDiagnostics.Info("round", "phase_changed",
+                $"phase={Phase.Value} duration={paintSeconds:0.##} players={players.Count}");
         }
 
         public void BeginHunt()
@@ -119,6 +144,8 @@ namespace MechaChameleon
             SendHuntersToHuntPositions();
             Phase.Value = GamePhase.Hunt;
             PhaseEndsAt.Value = NetworkManager.ServerTime.Time + huntSeconds;
+            GameDiagnostics.Info("round", "phase_changed",
+                $"phase={Phase.Value} duration={huntSeconds:0.##} players={players.Count}");
         }
 
         public void ResetToLobby()
@@ -128,6 +155,8 @@ namespace MechaChameleon
             Phase.Value = GamePhase.Lobby;
             PhaseEndsAt.Value = 0;
             HidersWonLastRound.Value = false;
+            GameDiagnostics.Info("round", "phase_changed",
+                $"phase={Phase.Value} players={players.Count}");
 
             foreach (var player in players.Values)
             {
@@ -160,6 +189,8 @@ namespace MechaChameleon
             );
 
             practiceHiders.Add(hider);
+            GameDiagnostics.Info("round", "practice_hider_spawned",
+                $"networkObjectId={hider.NetworkObjectId}");
         }
 
         public Vector3 GetRespawnPosition(ulong clientId)
@@ -176,17 +207,26 @@ namespace MechaChameleon
             return GetLobbySpawn(clientId).position;
         }
 
-        public Vector3 HunterPlatformCenter => hunterPlatform != null ? hunterPlatform.position : DefaultHunterPlatformPosition;
+        public Vector3 HunterPlatformCenter
+        {
+            get
+            {
+                var platform = ActiveRoom != null ? ActiveRoom.HunterPlatform : hunterPlatform;
+                return platform != null ? platform.position : DefaultHunterPlatformPosition;
+            }
+        }
 
         public bool IsOnHunterPlatform(Vector3 position)
         {
-            if (hunterPlatform == null) return false;
+            var room = ActiveRoom;
+            var platform = room != null ? room.HunterPlatform : hunterPlatform;
+            if (platform == null) return false;
 
-            var size = hunterPlatformSize;
+            var size = room != null ? room.HunterPlatformSize : hunterPlatformSize;
             if (size.x <= 0f || size.y <= 0f || size.z <= 0f)
                 size = DefaultHunterPlatformSize;
 
-            var local = Quaternion.Inverse(hunterPlatform.rotation) * (position - hunterPlatform.position);
+            var local = Quaternion.Inverse(platform.rotation) * (position - platform.position);
             return Mathf.Abs(local.x) <= size.x * 0.5f &&
                    local.y >= -0.5f &&
                    local.y <= size.y &&
@@ -199,6 +239,8 @@ namespace MechaChameleon
             if (target.Role.Value != PlayerRole.Hider || !target.Alive.Value) return;
 
             target.Alive.Value = false;
+            GameDiagnostics.Info("round", "hider_hit",
+                $"targetOwner={target.OwnerClientId} networkObjectId={target.NetworkObjectId}");
 
             foreach (var hider in practiceHiders)
             {
@@ -224,11 +266,15 @@ namespace MechaChameleon
             player.NetworkObject.SpawnAsPlayerObject(clientId);
             player.ResetForLobby();
             players[clientId] = player;
+            GameDiagnostics.Info("round", "player_spawned",
+                $"clientId={clientId} networkObjectId={player.NetworkObjectId} players={players.Count}");
         }
 
         void OnClientDisconnected(ulong clientId)
         {
             players.Remove(clientId);
+            GameDiagnostics.Info("round", "player_removed",
+                $"clientId={clientId} players={players.Count}");
         }
 
         void AssignRoles()
@@ -241,6 +287,10 @@ namespace MechaChameleon
                 pair.Value.Role.Value = pair.Key == seekerClientId ? PlayerRole.Seeker : PlayerRole.Hider;
                 pair.Value.Alive.Value = true;
             }
+
+            GameDiagnostics.Info("round", "roles_assigned",
+                $"seekerClientId={seekerClientId} players={players.Count} " +
+                $"practiceHiders={practiceHiders.Count}");
         }
 
         ulong SelectSeekerClientId()
@@ -287,6 +337,7 @@ namespace MechaChameleon
 
         void EnsureHunterPlatform()
         {
+            if (ActiveRoom != null && ActiveRoom.HunterPlatform != null) return;
             if (hunterPlatform != null) return;
 
             var existing = GameObject.Find("Hunter Choice Platform");
@@ -310,6 +361,7 @@ namespace MechaChameleon
 
         void EnsureRoomSpawns()
         {
+            if (ActiveRoom != null && ActiveRoom.IsConfigured()) return;
             if (hiderSpawnPoints == null || hiderSpawnPoints.Length == 0)
             {
                 hiderSpawnPoints = new Transform[DefaultHiderSpawnPositions.Length];
@@ -331,8 +383,10 @@ namespace MechaChameleon
         void EndRound(bool hidersWon)
         {
             Phase.Value = GamePhase.Result;
-            PhaseEndsAt.Value = 0;
+            PhaseEndsAt.Value = NetworkManager.ServerTime.Time + Mathf.Max(0.5f, resultSeconds);
             HidersWonLastRound.Value = hidersWon;
+            GameDiagnostics.Info("round", "round_ended",
+                $"hidersWon={hidersWon} resultDuration={resultSeconds:0.##}");
 
             if (hidersWon)
                 ReturnPlayersToLobby();
@@ -353,6 +407,7 @@ namespace MechaChameleon
         [ClientRpc]
         void AnnounceResultClientRpc(bool hidersWon)
         {
+            GameDiagnostics.Info("round", "result_received", $"hidersWon={hidersWon}");
             Debug.Log(hidersWon ? "Hiders win." : "Seeker wins.");
         }
 
@@ -363,18 +418,24 @@ namespace MechaChameleon
 
         Transform GetLobbySpawn(ulong clientId)
         {
+            var modularSpawn = ActiveRoom?.GetLobbySpawn(clientId);
+            if (modularSpawn != null) return modularSpawn;
             if (spawnPoints == null || spawnPoints.Length == 0) return transform;
             return spawnPoints[(int)(clientId % (ulong)spawnPoints.Length)];
         }
 
         Transform GetHiderSpawn(ulong clientId)
         {
+            var modularSpawn = ActiveRoom?.GetHiderSpawn(clientId);
+            if (modularSpawn != null) return modularSpawn;
             if (hiderSpawnPoints == null || hiderSpawnPoints.Length == 0) return GetLobbySpawn(clientId);
             return hiderSpawnPoints[(int)(clientId % (ulong)hiderSpawnPoints.Length)];
         }
 
         Transform GetHunterSpawn()
         {
+            if (ActiveRoom != null && ActiveRoom.HunterSpawnPoint != null)
+                return ActiveRoom.HunterSpawnPoint;
             return hunterSpawnPoint != null ? hunterSpawnPoint : GetLobbySpawn(NetworkManager.ServerClientId);
         }
 
@@ -384,6 +445,48 @@ namespace MechaChameleon
                 return hiderSpawnPoints[Mathf.Min(1, hiderSpawnPoints.Length - 1)];
 
             return GetLobbySpawn(NetworkManager.ServerClientId);
+        }
+
+        public bool TrySelectRoom(string roomId)
+        {
+            if (!IsServer || Phase.Value != GamePhase.Lobby || string.IsNullOrWhiteSpace(roomId) || roomModules == null)
+                return false;
+
+            for (var i = 0; i < roomModules.Length && i <= byte.MaxValue; i++)
+            {
+                if (roomModules[i] == null || roomModules[i].RoomId != roomId) continue;
+                ActiveRoomIndex.Value = (byte)i;
+                foreach (var player in players.Values)
+                    player.TeleportFromServer(GetLobbySpawn(player.OwnerClientId).position);
+                return true;
+            }
+
+            return false;
+        }
+
+        RoomModule GetRoomModule(int index)
+        {
+            if (roomModules == null || index < 0 || index >= roomModules.Length) return null;
+            var room = roomModules[index];
+            return room != null && room.IsConfigured() ? room : null;
+        }
+
+        void OnActiveRoomChanged(byte previous, byte current)
+        {
+            ApplyRoomActivation(current);
+            GameDiagnostics.Info("round", "room_module_changed",
+                $"previous={previous} current={current} roomId={ActiveRoom?.RoomId ?? "fallback"}");
+        }
+
+        void ApplyRoomActivation(int activeIndex)
+        {
+            if (roomModules == null) return;
+
+            for (var i = 0; i < roomModules.Length; i++)
+            {
+                if (roomModules[i] != null)
+                    roomModules[i].SetContentActive(i == activeIndex);
+            }
         }
     }
 }

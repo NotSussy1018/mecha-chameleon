@@ -1,20 +1,50 @@
 using System.Collections;
+using System.IO;
 using MechaChameleon;
 using NUnit.Framework;
 using Unity.Netcode;
+using Unity.Netcode.Transports.UTP;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
+using UnityEngine.UI;
 
 namespace MechaChameleon.Tests
 {
     public sealed class LocalHostTests
     {
+        [SetUp]
+        public void SetUp()
+        {
+            DeploymentEnvironmentSettings.SetTestOverride(DeploymentEnvironment.Development);
+        }
+
+        [UnityTest]
+        public IEnumerator DiagnosticsWritesSearchablePerProcessLog()
+        {
+            yield return null;
+            GameDiagnostics.Info("test", "diagnostic_probe", "value=works");
+            GameDiagnostics.Flush();
+
+            Assert.IsTrue(File.Exists(GameDiagnostics.CurrentLogPath));
+            var contents = File.ReadAllText(GameDiagnostics.CurrentLogPath);
+            StringAssert.Contains("category=test", contents);
+            StringAssert.Contains("event=diagnostic_probe", contents);
+            StringAssert.Contains("value=works", contents);
+        }
+
         [TearDown]
         public void TearDown()
         {
             if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
                 NetworkManager.Singleton.Shutdown();
+            foreach (var discovery in Object.FindObjectsByType<LocalRoomDiscovery>(
+                         FindObjectsInactive.Include,
+                         FindObjectsSortMode.None))
+            {
+                discovery.StopAll();
+            }
+            DeploymentEnvironmentSettings.SetTestOverride(null);
         }
 
         [UnityTest]
@@ -57,6 +87,84 @@ namespace MechaChameleon.Tests
         }
 
         [UnityTest]
+        public IEnumerator JoinLocalUsesDiscoveredRoomPort()
+        {
+            SceneManager.LoadScene("Mvp");
+            yield return null;
+            yield return null;
+
+            var connector = Object.FindFirstObjectByType<RoomConnector>();
+            var manager = NetworkManager.Singleton;
+            const ushort advertisedPort = 7789;
+            Assert.NotNull(connector);
+            Assert.NotNull(manager);
+            var transport = manager.GetComponent<UnityTransport>();
+            Assert.NotNull(transport);
+
+            Assert.IsTrue(connector.JoinLocal(new RoomListing
+            {
+                RoomId = "CUSTOM_PORT_TEST",
+                HostAddress = "127.0.0.1",
+                Port = advertisedPort,
+                RoomName = "Custom Port Room",
+                MaxPlayers = 8
+            }, ""));
+
+            Assert.AreEqual(advertisedPort, transport.ConnectionData.Port);
+            manager.Shutdown();
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator CreateRoomUiUsesSubmittedRoomDataAndShowsOnlyHost()
+        {
+            SceneManager.LoadScene("Mvp");
+            yield return null;
+            yield return null;
+
+            var ui = Object.FindFirstObjectByType<GameUiController>();
+            var connector = Object.FindFirstObjectByType<RoomConnector>();
+            Assert.NotNull(ui);
+            Assert.NotNull(connector);
+
+            ui.ShowCreateRoom();
+            var canvas = GameObject.Find("Game UI Canvas").transform;
+            var board = canvas.Find("CreateRoomPanel/Create Room Board");
+            var roomName = board.Find("Room Name").GetComponent<InputField>();
+            var password = board.Find("Room Password").GetComponent<InputField>();
+            roomName.text = "Moonlight Hideout";
+            password.text = "paint";
+            board.Find("Create Confirm").GetComponent<Button>().onClick.Invoke();
+
+            yield return WaitForHostAndPlayer();
+
+            Assert.AreEqual("Moonlight Hideout", connector.CurrentRoom.RoomName);
+            Assert.IsTrue(connector.CurrentRoom.IsLocked);
+            Assert.AreEqual(1, connector.ConnectedPlayerCount);
+            Assert.AreEqual(
+                "Moonlight Hideout",
+                canvas.Find("RoomPanel/Room Info/Room Name").GetComponent<Text>().text);
+
+            var visiblePlayers = 0;
+            foreach (var row in canvas.GetComponentsInChildren<RoomPlayerRowView>(true))
+            {
+                if (row.gameObject.activeSelf)
+                    visiblePlayers++;
+            }
+
+            Assert.AreEqual(1, visiblePlayers);
+
+            connector.Leave();
+            yield return null;
+            yield return null;
+            Assert.IsFalse(NetworkManager.Singleton.IsListening);
+            Assert.IsTrue(connector.CreateLocalRoom("Restarted Room", ""),
+                "Leaving a room must release UDP 7778 for the next host.");
+            yield return WaitForHostAndPlayer();
+            NetworkManager.Singleton.Shutdown();
+        }
+
+        [UnityTest]
         public IEnumerator SoloPracticeCanSpawnTargetAndStartHunt()
         {
             SceneManager.LoadScene("Mvp");
@@ -79,11 +187,16 @@ namespace MechaChameleon.Tests
 
             Assert.AreEqual(GamePhase.Paint, round.Phase.Value);
             Assert.AreEqual(PlayerRole.Seeker, ChameleonPlayer.Local.Role.Value);
+            var canvas = GameObject.Find("Game UI Canvas").transform;
+            Assert.That(canvas.Find("GameHud/Timer").GetComponent<Text>().text, Does.StartWith("HIDE"));
+            Assert.AreEqual("HUNTER", canvas.Find("GameHud/Role Badge/Label").GetComponent<Text>().text);
+            Assert.IsFalse(canvas.Find("GameHud/Paint Tools").gameObject.activeSelf);
 
             round.BeginHunt();
             yield return null;
 
             Assert.AreEqual(GamePhase.Hunt, round.Phase.Value);
+            Assert.That(canvas.Find("GameHud/Timer").GetComponent<Text>().text, Does.StartWith("HUNT"));
             Assert.GreaterOrEqual(Object.FindObjectsByType<ChameleonPlayer>(FindObjectsSortMode.None).Length, 2);
 
             NetworkManager.Singleton.Shutdown();
@@ -175,7 +288,7 @@ namespace MechaChameleon.Tests
         }
 
         [UnityTest]
-        public IEnumerator HunterShotEliminatesHider()
+        public IEnumerator HunterShotEliminatesHiderAndReturnsToLobby()
         {
             SceneManager.LoadScene("Mvp");
             yield return null;
@@ -199,6 +312,7 @@ namespace MechaChameleon.Tests
 
             Assert.NotNull(target);
 
+            hunter.SetServerState(PlayerRole.Seeker, true, Color.white, Color.white, PoseId.Lie);
             hunter.transform.position = new Vector3(0f, 1f, -4f);
             target.transform.position = new Vector3(0f, 1f, 0f);
             Physics.SyncTransforms();
@@ -213,6 +327,13 @@ namespace MechaChameleon.Tests
 
             yield return new WaitForSeconds(0.45f);
             Assert.Greater(Mathf.Abs(hunter.transform.position.z + 4f), 0.01f);
+
+            yield return new WaitForSeconds(round.ResultSeconds);
+            Assert.AreEqual(GamePhase.Lobby, round.Phase.Value);
+            Assert.AreEqual(PlayerRole.Hider, hunter.Role.Value);
+            Assert.IsTrue(hunter.Alive.Value);
+            Assert.AreEqual(PoseId.Stand, hunter.Pose.Value);
+            Assert.IsTrue(GameObject.Find("Game UI Canvas").transform.Find("RoomPanel").gameObject.activeSelf);
 
             NetworkManager.Singleton.Shutdown();
         }
@@ -395,6 +516,122 @@ namespace MechaChameleon.Tests
                 Mathf.RoundToInt(0.5f * 127f));
             Assert.AreEqual(new Color32(255, 255, 255, 255), clearedPixel);
             NetworkManager.Singleton.Shutdown();
+        }
+
+        [UnityTest]
+        public IEnumerator LocalRoomDiscoveryDeduplicatesLocalAdvertisements()
+        {
+            var listenerObject = new GameObject("Test Room Listener");
+            var advertiserObject = new GameObject("Test Room Advertiser");
+            var listener = listenerObject.AddComponent<LocalRoomDiscovery>();
+            var advertiser = advertiserObject.AddComponent<LocalRoomDiscovery>();
+
+            Assert.IsTrue(Application.runInBackground,
+                "Local multiplayer must keep advertising while another player window has focus.");
+            listener.StartListening();
+            advertiser.StartAdvertising(() => new RoomListing
+            {
+                RoomId = "LOOPBACK_TEST",
+                HostAddress = "127.0.0.1",
+                Port = RoomConnector.LocalPort,
+                RoomName = "Loopback Room",
+                MaxPlayers = 8
+            });
+
+            var timeout = Time.realtimeSinceStartup + 3f;
+            while (Time.realtimeSinceStartup < timeout && listener.Rooms.Count == 0)
+                yield return null;
+
+            Assert.AreEqual(1, listener.Rooms.Count);
+            Assert.AreEqual("Loopback Room", listener.Rooms[0].RoomName);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(listener.Rooms[0].HostAddress));
+
+            yield return new WaitForSecondsRealtime(3.5f);
+            Assert.AreEqual(1, listener.Rooms.Count,
+                "A discovered room must stay listed while its host keeps advertising.");
+
+            Object.Destroy(listenerObject);
+            Object.Destroy(advertiserObject);
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator JoinRoomShowsRoomDiscoveredWhileOnHomeScreen()
+        {
+            SceneManager.LoadScene("Mvp");
+            yield return null;
+            yield return null;
+
+            var ui = Object.FindFirstObjectByType<GameUiController>();
+            var discovery = Object.FindFirstObjectByType<LocalRoomDiscovery>();
+            Assert.NotNull(ui);
+            Assert.NotNull(discovery);
+
+            var advertiserObject = new GameObject("Test UI Room Advertiser");
+            var advertiser = advertiserObject.AddComponent<LocalRoomDiscovery>();
+            advertiser.StartAdvertising(() => new RoomListing
+            {
+                RoomId = "UI_ROOM_TEST",
+                HostAddress = "127.0.0.1",
+                Port = RoomConnector.LocalPort,
+                RoomName = "Visible Room",
+                PlayerCount = 1,
+                MaxPlayers = 8
+            });
+
+            var timeout = Time.realtimeSinceStartup + 3f;
+            while (Time.realtimeSinceStartup < timeout && discovery.Rooms.Count == 0)
+                yield return null;
+
+            Assert.AreEqual(1, discovery.Rooms.Count);
+            ui.ShowJoinRoom();
+            yield return null;
+
+            var visibleRows = 0;
+            foreach (var row in Object.FindObjectsByType<LocalRoomRowView>(FindObjectsInactive.Include,
+                         FindObjectsSortMode.None))
+            {
+                if (!row.gameObject.activeInHierarchy) continue;
+                visibleRows++;
+                Assert.AreEqual("Visible Room", row.Room.RoomName);
+            }
+
+            Assert.AreEqual(1, visibleRows);
+            Object.Destroy(advertiserObject);
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator CreatedRoomKeepsAdvertisingAfterHostEntersRoom()
+        {
+            SceneManager.LoadScene("Mvp");
+            yield return null;
+            yield return null;
+
+            var connector = Object.FindFirstObjectByType<RoomConnector>();
+            var ui = Object.FindFirstObjectByType<GameUiController>();
+            Assert.NotNull(connector);
+            Assert.NotNull(ui);
+            Assert.IsTrue(connector.CreateLocalRoom("Persistent Room", ""));
+
+            ui.SendMessage("EnterRoom");
+
+            var listenerObject = new GameObject("Post Enter Room Listener");
+            var listener = listenerObject.AddComponent<LocalRoomDiscovery>();
+            listener.StartListening();
+
+            var timeout = Time.realtimeSinceStartup + 3f;
+            while (Time.realtimeSinceStartup < timeout && listener.Rooms.Count == 0)
+                yield return null;
+
+            Assert.AreEqual(1, listener.Rooms.Count);
+            yield return new WaitForSecondsRealtime(3.5f);
+            Assert.AreEqual(1, listener.Rooms.Count,
+                "Entering the room must not stop the host's LAN advertisement.");
+
+            connector.Leave();
+            Object.Destroy(listenerObject);
+            yield return null;
         }
 
         static IEnumerator WaitForHostAndPlayer()

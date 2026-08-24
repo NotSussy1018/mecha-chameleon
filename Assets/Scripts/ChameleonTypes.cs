@@ -18,13 +18,6 @@ namespace MechaChameleon
         Seeker = 1
     }
 
-    public enum PoseId
-    {
-        Stand = 0,
-        Crouch = 1,
-        Lie = 2
-    }
-
     public enum PaintPart : byte
     {
         Head = 0,

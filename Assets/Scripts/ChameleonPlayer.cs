@@ -1,18 +1,13 @@
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using System.Linq;
+using MechaChameleon.Poses;
 
 namespace MechaChameleon
 {
     public sealed class ChameleonPlayer : NetworkBehaviour
     {
-        static readonly Vector3 LeanVisualOffset = new(-0.41f, 0.28f, 0f);
-        static readonly Vector3 LieVisualOffset = new(0f, 0.36f, -0.63f);
-        static readonly Vector3 LeanCollisionCenter = new(0f, 0.61f, 0f);
-        static readonly Vector3 LeanCollisionHalfExtents = new(0.65f, 0.6f, 0.36f);
-        static readonly Vector3 LieCollisionCenter = new(0f, 0.42f, 0f);
-        static readonly Vector3 LieCollisionHalfExtents = new(0.36f, 0.41f, 0.7f);
-
         [SerializeField] private float moveSpeed = 4.5f;
         [SerializeField] private float jumpHeight = 1.4f;
         [SerializeField] private float gravity = -18f;
@@ -27,6 +22,7 @@ namespace MechaChameleon
         [SerializeField] private GameObject gunRoot;
         [SerializeField] private LineRenderer shotLine;
         [SerializeField] private ChameleonPaint paint;
+        [SerializeField] private PoseCatalog poseCatalog;
 
         public NetworkVariable<PlayerRole> Role { get; } = new(PlayerRole.Hider);
         public NetworkVariable<bool> Alive { get; } = new(true);
@@ -40,6 +36,7 @@ namespace MechaChameleon
         Material bodyMaterial;
         readonly RaycastHit[] climbHits = new RaycastHit[12];
         readonly RaycastHit[] poseMovementHits = new RaycastHit[16];
+        readonly RaycastHit[] cameraHits = new RaycastHit[16];
         float cameraPitch = 12f;
         float shotLineHideAt;
         float verticalVelocity;
@@ -51,6 +48,7 @@ namespace MechaChameleon
         public static ChameleonPlayer Local { get; private set; }
         public string LastShotStatus { get; private set; } = "";
         public ChameleonPaint Paint => paint;
+        public PoseCatalog AvailablePoses => poseCatalog;
 
         public override void OnNetworkSpawn()
         {
@@ -114,7 +112,8 @@ namespace MechaChameleon
         public void ResetForLobby()
         {
             paint?.ClearFromServer();
-            SetServerState(PlayerRole.Hider, alive: true, Color.white, Color.white, PoseId.Stand);
+            var defaultPose = poseCatalog != null ? poseCatalog.DefaultPoseId : PoseId.Stand;
+            SetServerState(PlayerRole.Hider, alive: true, Color.white, Color.white, defaultPose);
         }
 
         public void SetServerState(PlayerRole role, bool alive, Color32 head, Color32 body, PoseId pose)
@@ -224,13 +223,14 @@ namespace MechaChameleon
 
         Vector3 ConstrainPoseMovement(Vector3 displacement)
         {
-            if (Pose.Value == PoseId.Stand || displacement.sqrMagnitude < 0.000001f)
+            if (displacement.sqrMagnitude < 0.000001f)
                 return displacement;
 
-            var center = Pose.Value == PoseId.Lie ? LieCollisionCenter : LeanCollisionCenter;
-            var halfExtents = Pose.Value == PoseId.Lie
-                ? LieCollisionHalfExtents
-                : LeanCollisionHalfExtents;
+            var definition = PoseCatalog.Resolve(poseCatalog, Pose.Value);
+            if (!definition.ConstrainMovement) return displacement;
+
+            var center = definition.CollisionCenter;
+            var halfExtents = definition.CollisionHalfExtents;
             halfExtents -= Vector3.one * 0.025f;
 
             var distance = displacement.magnitude;
@@ -307,9 +307,21 @@ namespace MechaChameleon
 
         void HandleActions()
         {
-            if (Input.GetKeyDown(KeyCode.Alpha1)) SetPoseServerRpc(PoseId.Stand);
-            if (Input.GetKeyDown(KeyCode.Alpha2)) SetPoseServerRpc(PoseId.Crouch);
-            if (Input.GetKeyDown(KeyCode.Alpha3)) SetPoseServerRpc(PoseId.Lie);
+            if (poseCatalog != null)
+            {
+                for (var i = 0; i < poseCatalog.Count; i++)
+                {
+                    var definition = poseCatalog.GetAt(i);
+                    if (Input.GetKeyDown(definition.Shortcut))
+                        SetPoseServerRpc(definition.Id);
+                }
+            }
+            else
+            {
+                if (Input.GetKeyDown(KeyCode.Alpha1)) SetPoseServerRpc(PoseId.Stand);
+                if (Input.GetKeyDown(KeyCode.Alpha2)) SetPoseServerRpc(PoseId.Crouch);
+                if (Input.GetKeyDown(KeyCode.Alpha3)) SetPoseServerRpc(PoseId.Lie);
+            }
 
             if (Input.GetKeyDown(KeyCode.Z)) CycleHeadColor();
             if (Input.GetKeyDown(KeyCode.X)) CycleBodyColor();
@@ -397,6 +409,7 @@ namespace MechaChameleon
         [ServerRpc]
         void SetPoseServerRpc(PoseId pose)
         {
+            if (poseCatalog != null && !poseCatalog.TryGet(pose, out _)) return;
             Pose.Value = pose;
         }
 
@@ -497,23 +510,12 @@ namespace MechaChameleon
         {
             transform.localScale = Vector3.one;
             EnsureRuntimeVisuals();
-
-            var poseRotation = pose switch
-            {
-                PoseId.Crouch => Quaternion.Euler(0f, 0f, -50f),
-                PoseId.Lie => Quaternion.Euler(82f, 0f, 0f),
-                _ => Quaternion.identity
-            };
+            var definition = PoseCatalog.Resolve(poseCatalog, pose);
 
             if (visualRoot != null)
             {
-                visualRoot.localPosition = pose switch
-                {
-                    PoseId.Crouch => LeanVisualOffset,
-                    PoseId.Lie => LieVisualOffset,
-                    _ => Vector3.zero
-                };
-                visualRoot.localRotation = poseRotation;
+                visualRoot.localPosition = definition.VisualPosition;
+                visualRoot.localRotation = definition.VisualRotation;
                 ResetMovementController();
                 if (bodyRenderer != null)
                     bodyRenderer.transform.localRotation = Quaternion.identity;
@@ -526,10 +528,10 @@ namespace MechaChameleon
             }
 
             if (bodyRenderer != null)
-                bodyRenderer.transform.localRotation = poseRotation;
+                bodyRenderer.transform.localRotation = definition.VisualRotation;
 
             if (headRenderer != null)
-                headRenderer.transform.localRotation = poseRotation;
+                headRenderer.transform.localRotation = definition.VisualRotation;
 
             UpdateCameraPosition();
         }
@@ -591,17 +593,27 @@ namespace MechaChameleon
 
             if (distance > 0.01f)
             {
-                var hits = Physics.SphereCastAll(focus, 0.18f, direction.normalized, distance, ~0, QueryTriggerInteraction.Ignore)
-                    .OrderBy(hit => hit.distance);
-
-                foreach (var hit in hits)
+                var hitCount = Physics.SphereCastNonAlloc(
+                    focus,
+                    0.18f,
+                    direction.normalized,
+                    cameraHits,
+                    distance,
+                    ~0,
+                    QueryTriggerInteraction.Ignore);
+                var closestDistance = float.PositiveInfinity;
+                for (var i = 0; i < hitCount; i++)
                 {
+                    var hit = cameraHits[i];
                     if (hit.collider.GetComponentInParent<ChameleonPlayer>() == this)
                         continue;
 
-                    desiredWorld = focus + direction.normalized * Mathf.Max(0.35f, hit.distance - 0.12f);
-                    break;
+                    if (hit.distance < closestDistance)
+                        closestDistance = hit.distance;
                 }
+
+                if (!float.IsPositiveInfinity(closestDistance))
+                    desiredWorld = focus + direction.normalized * Mathf.Max(0.35f, closestDistance - 0.12f);
             }
 
             playerCamera.transform.position = desiredWorld;
@@ -641,7 +653,10 @@ namespace MechaChameleon
             if (Cursor.lockState == CursorLockMode.Locked)
                 return true;
 
-            if (Input.GetMouseButtonDown(0) && Input.mousePosition.x > 340f)
+            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+                return false;
+
+            if (Input.GetMouseButtonDown(0))
             {
                 LockCursor();
                 return false;

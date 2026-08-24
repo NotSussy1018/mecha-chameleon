@@ -1,0 +1,8 @@
+{
+  "name": "MechaChameleon.Poses",
+  "rootNamespace": "MechaChameleon.Poses",
+  "references": [
+    "Unity.Netcode.Runtime"
+  ],
+  "autoReferenced": true
+}

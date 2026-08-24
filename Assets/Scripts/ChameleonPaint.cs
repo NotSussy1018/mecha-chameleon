@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.Rendering;
 
 namespace MechaChameleon
@@ -72,6 +73,13 @@ namespace MechaChameleon
         public bool IsReady => headTexture != null && bodyTexture != null;
         public int StrokeCount => Strokes.Count;
         public int BrushRadius => brushRadius;
+        public int BrushSizeIndex => brushRadius switch
+        {
+            2 => 0,
+            4 => 1,
+            7 => 2,
+            _ => 3
+        };
         public Color32 SelectedColor => selectedColor;
 
         public override void OnNetworkSpawn()
@@ -109,7 +117,7 @@ namespace MechaChameleon
                 TogglePaintMode();
 
             if (!IsPaintMode) return;
-            if (!CanPaintNow() || Input.GetKeyDown(KeyCode.Escape))
+            if (!CanPaintNow())
             {
                 ExitPaintMode();
                 return;
@@ -118,7 +126,8 @@ namespace MechaChameleon
             PaintPart part = default;
             Vector2 uv = default;
             RaycastHit hit = default;
-            var canInteractWithWorld = Input.mousePosition.x > 340f;
+            var canInteractWithWorld = EventSystem.current == null ||
+                                       !EventSystem.current.IsPointerOverGameObject();
             var hasPaintHit = canInteractWithWorld &&
                               TryGetPaintHit(out part, out uv, out hit);
             HandlePaintControls(canInteractWithWorld, hasPaintHit);
@@ -179,12 +188,17 @@ namespace MechaChameleon
 
         public void CycleBrushSize()
         {
-            brushRadius = brushRadius switch
+            SetBrushSizeIndex((BrushSizeIndex + 1) % 4);
+        }
+
+        public void SetBrushSizeIndex(int index)
+        {
+            brushRadius = Mathf.Clamp(index, 0, 3) switch
             {
-                2 => 4,
-                4 => 7,
-                7 => GiantBrushRadius,
-                _ => 2
+                0 => 2,
+                1 => 4,
+                2 => 7,
+                _ => GiantBrushRadius
             };
         }
 

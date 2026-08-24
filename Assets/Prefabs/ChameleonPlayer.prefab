@@ -595,6 +595,7 @@ MonoBehaviour:
   gunRoot: {fileID: 310867150245888511}
   shotLine: {fileID: 9007249620839349537}
   paint: {fileID: 7707837988755281524}
+  poseCatalog: {fileID: 11400000, guid: 0f18429256584a15b282127182532716, type: 2}
 --- !u!114 &7707837988755281524
 MonoBehaviour:
   m_ObjectHideFlags: 0

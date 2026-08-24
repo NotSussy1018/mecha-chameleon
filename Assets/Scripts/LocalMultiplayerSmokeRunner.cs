@@ -10,6 +10,7 @@ namespace MechaChameleon
     {
         const string ArgName = "-mechaSmoke";
         const float TimeoutSeconds = 20f;
+        const string SmokePassword = "smoke-secret";
 
         string mode;
         bool started;
@@ -40,14 +41,28 @@ namespace MechaChameleon
             if (mode == "host")
             {
                 Debug.Log("[Smoke] Host starting.");
-                connector.HostLocal();
+                connector.CreateLocalRoom("Smoke Test Room", SmokePassword);
                 StartCoroutine(WaitForHostSuccess());
             }
             else if (mode == "client")
             {
                 Debug.Log("[Smoke] Client starting.");
-                connector.JoinLocal();
+                connector.JoinLocal(CreateSmokeListing(), SmokePassword);
                 StartCoroutine(WaitForClientSuccess());
+            }
+            else if (mode == "client-wrong")
+            {
+                Debug.Log("[Smoke] Wrong-password client starting.");
+                connector.JoinLocal(CreateSmokeListing(), "wrong-password");
+                StartCoroutine(WaitForPasswordRejection(connector));
+            }
+            else if (mode == "discover")
+            {
+                Debug.Log("[Smoke] Room discovery starting.");
+                var discovery = connector.GetComponent<LocalRoomDiscovery>();
+                discovery.StartListening();
+                discovery.Refresh();
+                StartCoroutine(WaitForRoomDiscovery(discovery));
             }
             else
             {
@@ -111,6 +126,57 @@ namespace MechaChameleon
             }
 
             Fail("Client timed out waiting for local player spawn.");
+        }
+
+        IEnumerator WaitForPasswordRejection(RoomConnector connector)
+        {
+            while (Time.realtimeSinceStartup - startedAt < TimeoutSeconds)
+            {
+                var manager = NetworkManager.Singleton;
+                if (manager != null && !manager.IsListening &&
+                    connector.Status.Contains("Incorrect room password"))
+                {
+                    yield return Pass("Host rejected an incorrect room password.");
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            Fail($"Wrong password was not rejected. Last status: {connector.Status}");
+        }
+
+        IEnumerator WaitForRoomDiscovery(LocalRoomDiscovery discovery)
+        {
+            while (Time.realtimeSinceStartup - startedAt < TimeoutSeconds)
+            {
+                if (discovery.Rooms.Count > 0)
+                {
+                    var room = discovery.Rooms[0];
+                    if (room.RoomName == "Smoke Test Room" && room.IsLocked && room.PlayerCount == 1)
+                    {
+                        yield return Pass("Discovered the host room with live name, lock, and player count.");
+                        yield break;
+                    }
+                }
+
+                yield return null;
+            }
+
+            Fail("Client did not discover the local host room.");
+        }
+
+        static RoomListing CreateSmokeListing()
+        {
+            return new RoomListing
+            {
+                RoomId = "SMOKE",
+                HostAddress = "127.0.0.1",
+                Port = RoomConnector.LocalPort,
+                RoomName = "Smoke Test Room",
+                IsLocked = true,
+                MaxPlayers = 8
+            };
         }
 
         IEnumerator Pass(string message)

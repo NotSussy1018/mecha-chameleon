@@ -1,4 +1,6 @@
 using MechaChameleon;
+using MechaChameleon.Poses;
+using MechaChameleon.Rooms;
 using Unity.Netcode;
 using Unity.Netcode.Components;
 using Unity.Netcode.Transports.UTP;
@@ -58,30 +60,39 @@ namespace MechaChameleon.Editor
             var roundObject = new GameObject("RoundManager");
             var roundNetObj = roundObject.AddComponent<NetworkObject>();
             var round = roundObject.AddComponent<ChameleonRoundManager>();
+            var roomModule = roundObject.AddComponent<RoomModule>();
 
             var so = new SerializedObject(round);
             so.FindProperty("playerPrefab").objectReferenceValue = playerPrefab.GetComponent<ChameleonPlayer>();
             so.FindProperty("hunterPlatform").objectReferenceValue = hunterPlatform.transform;
             so.FindProperty("hunterPlatformSize").vector3Value = new Vector3(4f, 3f, 3f);
             so.FindProperty("spawnPoints").arraySize = 4;
+            var lobbySpawns = new Transform[4];
             for (var i = 0; i < 4; i++)
             {
                 var spawn = new GameObject($"Spawn {i + 1}").transform;
                 spawn.position = new Vector3(-4f + i * 2.5f, 1f, -3.5f);
+                lobbySpawns[i] = spawn;
                 so.FindProperty("spawnPoints").GetArrayElementAtIndex(i).objectReferenceValue = spawn;
             }
 
             so.FindProperty("hiderSpawnPoints").arraySize = 4;
+            var hiderSpawns = new Transform[4];
             for (var i = 0; i < 4; i++)
             {
                 var spawn = new GameObject($"Hider Spawn {i + 1}").transform;
                 spawn.position = new Vector3(-4f + i * 2.5f, 1f, 24f);
+                hiderSpawns[i] = spawn;
                 so.FindProperty("hiderSpawnPoints").GetArrayElementAtIndex(i).objectReferenceValue = spawn;
             }
 
             var hunterSpawn = new GameObject("Hunter Spawn").transform;
             hunterSpawn.position = new Vector3(0f, 1f, 20.8f);
             so.FindProperty("hunterSpawnPoint").objectReferenceValue = hunterSpawn;
+            roomModule.Configure("house-room", "House Room", null, lobbySpawns, hiderSpawns,
+                hunterSpawn, hunterPlatform.transform, new Vector3(4f, 3f, 3f));
+            so.FindProperty("roomModules").arraySize = 1;
+            so.FindProperty("roomModules").GetArrayElementAtIndex(0).objectReferenceValue = roomModule;
             so.ApplyModifiedProperties();
 
             DeleteAssetIfExists("Assets/NetworkPrefabs.asset");
@@ -480,6 +491,8 @@ namespace MechaChameleon.Editor
             playerSo.FindProperty("gunRoot").objectReferenceValue = gunRoot;
             playerSo.FindProperty("shotLine").objectReferenceValue = shotLine;
             playerSo.FindProperty("paint").objectReferenceValue = paint;
+            playerSo.FindProperty("poseCatalog").objectReferenceValue =
+                AssetDatabase.LoadAssetAtPath<PoseCatalog>("Assets/Content/Poses/DefaultPoseCatalog.asset");
             playerSo.ApplyModifiedProperties();
 
             var paintSo = new SerializedObject(paint);

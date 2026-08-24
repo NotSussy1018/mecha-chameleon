@@ -5,7 +5,7 @@
     "com.unity.multiplayer.playmode": "1.5.0",
     "com.unity.netcode.gameobjects": "2.4.3",
     "com.unity.services.authentication": "3.5.1",
-    "com.unity.services.multiplayer": "1.1.4",
+    "com.unity.services.multiplayer": "1.1.8",
     "com.unity.test-framework": "1.6.0",
     "com.unity.transport": "2.6.0",
     "com.unity.ugui": "2.0.0",

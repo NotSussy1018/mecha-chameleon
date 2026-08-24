@@ -3,6 +3,8 @@
   "rootNamespace": "MechaChameleon.Tests",
   "references": [
     "MechaChameleon",
+    "MechaChameleon.Poses",
+    "MechaChameleon.Rooms",
     "Unity.Netcode.Runtime",
     "Unity.Services.Multiplayer",
     "UnityEngine.TestRunner",

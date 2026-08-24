@@ -1,0 +1,40 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 54f18e8dff5541b78f595f8d987232af, type: 3}
+  m_Name: DefaultPoseCatalog
+  m_EditorClassIdentifier: 
+  defaultPoseId: 0
+  definitions:
+  - networkId: 0
+    displayName: Stand
+    shortcut: 49
+    visualPosition: {x: 0, y: 0, z: 0}
+    visualEulerAngles: {x: 0, y: 0, z: 0}
+    constrainMovement: 0
+    collisionCenter: {x: 0, y: 0, z: 0}
+    collisionHalfExtents: {x: 0, y: 0, z: 0}
+  - networkId: 1
+    displayName: Lean
+    shortcut: 50
+    visualPosition: {x: -0.41, y: 0.28, z: 0}
+    visualEulerAngles: {x: 0, y: 0, z: -50}
+    constrainMovement: 1
+    collisionCenter: {x: 0, y: 0.61, z: 0}
+    collisionHalfExtents: {x: 0.65, y: 0.6, z: 0.36}
+  - networkId: 2
+    displayName: Lie
+    shortcut: 51
+    visualPosition: {x: 0, y: 0.36, z: -0.63}
+    visualEulerAngles: {x: 82, y: 0, z: 0}
+    constrainMovement: 1
+    collisionCenter: {x: 0, y: 0.42, z: 0}
+    collisionHalfExtents: {x: 0.36, y: 0.41, z: 0.7}

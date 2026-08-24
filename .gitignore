@@ -19,3 +19,4 @@
 .DS_Store
 editmode-results.xml
 playmode-results.xml
+mono_crash.*.json

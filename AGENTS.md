@@ -9,12 +9,13 @@
 3. 코드, 네트워크, 씬, 데이터 흐름을 바꿀 때 `ARCHITECTURE.md`
 4. 모델, 맵, 재질, 조명, UI 비주얼을 바꿀 때 `ART_STYLE.md`
 5. 모든 구현 및 버그 수정 전에 `TEST.md`
+6. 환경 설정, 빌드, 배포를 바꿀 때 `DEPLOYMENT.md`
 
 여러 영역에 걸친 작업이면 해당 문서를 모두 읽는다.
 
 ## 문서의 권한
 
-- 이 다섯 문서가 현재 승인된 제품 및 기술 기준선이다.
+- 이 문서들이 현재 승인된 제품 및 기술 기준선이다.
 - 코드와 문서가 다르면 코드의 현재 동작을 먼저 확인한 뒤 차이를 보고한다. 의도 확인 없이 문서나 코드를 한쪽에 맞추지 않는다.
 - 사용자의 요청이 문서와 충돌하면 **코드, 에셋, 씬, 설정을 변경하지 않는다.**
 - 대신 충돌하는 문서 항목, 예상 영향, 가장 작은 문서 변경안과 구현안을 제안한다.
@@ -24,13 +25,14 @@
 
 ## 현재 제품 목표
 
-온라인 서비스 없이 같은 컴퓨터 또는 같은 LAN에서 실행되는 짧은 Mecha Chameleon 스타일 숨바꼭질 게임을 완성한다.
+로컬 개발 흐름을 유지하면서 Staging과 Production에서 인터넷 멀티플레이가 가능한 짧은 Mecha Chameleon 스타일 숨바꼭질 게임을 완성한다.
 
 - Unity 6와 Netcode for GameObjects를 유지한다.
-- 한 플레이어가 로컬 호스트이자 방장이고 다른 플레이어가 직접 접속한다.
-- Firebase, Relay, Unity Multiplayer Services, 계정, 매치메이킹은 현재 목표에 필요하지 않다.
-- 기존 Relay 코드는 제거가 승인되기 전까지 그대로 둘 수 있지만 새 UI의 기본 경로로 노출하지 않는다.
-- 첫 완성 기준은 Home, Create Room, Join Room, Room, Options UI와 기존 라운드가 하나의 로컬 흐름으로 이어지는 것이다.
+- Development 환경은 기존 localhost/LAN 직접 접속을 사용한다.
+- Staging과 Production은 Multiplayer Services Sessions, Relay, Unity Authentication의 username/password 계정, player-host 방을 사용한다.
+- Firebase는 실시간 게임플레이 전송, 방 목록, 현재 로그인에 사용하지 않는다. 영구 프로필 데이터가 필요해질 때만 별도로 검토한다.
+- Unity Cloud Project 연결은 외부 설정이며 연결 전에도 Development가 동작하고 Staging은 명확한 설정 오류를 보여야 한다.
+- 첫 온라인 완성 기준은 기존 Home, Create Room, Join Room, Room, Options UI가 환경에 따라 LAN 또는 MPS/Relay 흐름으로 이어지는 것이다.
 
 세부 범위와 게임 규칙은 `GDD.md`를 따른다.
 
@@ -43,7 +45,8 @@
 - 클라이언트가 보낸 역할, 명중, 타이머, 승패 결과를 그대로 신뢰하지 않는다.
 - 매 프레임 실행되는 게임플레이 경로에서 불필요한 할당, LINQ, `Find` 호출을 추가하지 않는다.
 - 현재 규모에서 사용하지 않을 범용 프레임워크, 서비스 로케이터, 이벤트 버스, 저장소 계층, 추상 팩토리를 만들지 않는다.
-- 새 패키지나 온라인 의존성은 먼저 필요성과 대안을 제안하고 승인을 받은 뒤 추가한다.
+- 승인된 MPS, Authentication, NGO, Unity Transport 외의 새 온라인 의존성은 먼저 필요성과 대안을 제안하고 승인을 받은 뒤 추가한다.
+- 비밀번호 원문을 로그, diagnostics, room/session data, PlayerPrefs 또는 별도 파일에 기록하지 않는다.
 - 생성된 에셋과 외부 에셋은 출처와 라이선스를 기록한다.
 
 ## Git 버전 관리와 브랜치
@@ -74,6 +77,8 @@
 - `Mecha Chameleon/Build MVP Scene` 메뉴는 씬과 관련 에셋을 재생성하고 덮어쓸 수 있다. 사용자가 명시적으로 요청하지 않으면 실행하지 않는다.
 - 이미 열려 있는 사용자의 Unity Editor를 임의로 종료하지 않는다.
 - 테스트 중 UDP `7778` 포트 충돌이 나면 다른 프로세스 사용 여부와 NGO 종료 상태를 확인한 뒤 실패 테스트만 한 번 재실행한다.
+- 배포 빌드는 `DeploymentBuild` 또는 `scripts/unity-build.sh`만 사용한다. 수동 Scripting Define 변경으로 환경을 만들지 않는다.
+- Production 빌드는 깨끗한 Git 상태, 연결된 Cloud Project, 설정된 Company Name을 요구한다.
 
 ## 완료 조건
 
@@ -90,7 +95,7 @@
 ## 문서 지도
 
 - `GDD.md`: 제품 목표, 화면 흐름, 라운드 규칙, 조작, 범위
-- `ARCHITECTURE.md`: 코드 소유권, NGO 권한, 로컬 방 검색, UI 구조, 데이터 흐름
+- `ARCHITECTURE.md`: 코드 소유권, NGO 권한, 환경 분리, 방 검색, UI 구조, 데이터 흐름
 - `ART_STYLE.md`: 집 내부 테마, 캐릭터와 소품 스케일, 재질, 조명, UI 비주얼
 - `TEST.md`: 자동 테스트, 수동 멀티플레이 시나리오, 기능별 통과 기준
-
+- `DEPLOYMENT.md`: 환경별 설정, 빌드 명령, 산출물, 승격과 배포 절차

@@ -16,6 +16,7 @@ namespace MechaChameleon.Editor
         const string ButtonPath = "Assets/UI/Generated/wood_button.png";
         const string PanelPath = "Assets/UI/Generated/wood_panel.png";
         const string ColorWheelPath = "Assets/UI/Generated/color_wheel.png";
+        const string MenuFontPath = "Assets/UI/Fonts/LilitaOne-Regular.ttf";
 
         static readonly Color Cream = new(1f, 0.94f, 0.78f);
         static readonly Color DeepTeal = new(0.035f, 0.16f, 0.19f);
@@ -25,6 +26,7 @@ namespace MechaChameleon.Editor
         static readonly Color Muted = new(0.58f, 0.68f, 0.67f);
 
         static Font font;
+        static Font menuFont;
         static Sprite buttonSprite;
         static Sprite panelSprite;
         static Sprite backgroundSprite;
@@ -47,7 +49,11 @@ namespace MechaChameleon.Editor
             buttonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(ButtonPath);
             panelSprite = AssetDatabase.LoadAssetAtPath<Sprite>(PanelPath);
             colorWheelSprite = AssetDatabase.LoadAssetAtPath<Sprite>(ColorWheelPath);
-            font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            var gameFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            menuFont = AssetDatabase.LoadAssetAtPath<Font>(MenuFontPath);
+            font = menuFont != null ? menuFont : gameFont;
+            if (menuFont == null)
+                Debug.LogWarning($"Menu font is missing at {MenuFontPath}; using the built-in font.");
 
             var previous = GameObject.Find("Game UI Canvas");
             if (previous != null)
@@ -74,24 +80,32 @@ namespace MechaChameleon.Editor
             var controller = app.GetComponent<GameUiController>();
             if (controller == null)
                 controller = app.AddComponent<GameUiController>();
+            if (app.GetComponent<LocalRoomDiscovery>() == null)
+                app.AddComponent<LocalRoomDiscovery>();
 
             var oldHud = app.GetComponent<MvpHud>();
             if (oldHud != null)
                 oldHud.enabled = false;
 
             var background = BuildMenuBackground(canvasObject.transform);
-            var home = BuildHome(canvasObject.transform, out var homeCreate, out var homeJoin, out var homeOptions);
+            var login = BuildLogin(canvasObject.transform, out var authSignInTab, out var authSignUpTab,
+                out var authSubmit);
+            var home = BuildHome(canvasObject.transform, out var homeCreate, out var homeJoin,
+                out var homeOptions, out var homeSignOut);
             var create = BuildCreateRoom(canvasObject.transform, out var createConfirm, out var createBack);
-            var join = BuildJoinRoom(canvasObject.transform, out var joinBack, out var joinLocked, out var joinOpen);
+            var join = BuildJoinRoom(canvasObject.transform, out var joinBack, out var joinRefresh);
             var room = BuildRoom(canvasObject.transform, out var roomStart, out var roomOptions);
             var options = BuildOptions(canvasObject.transform, out var optionsBack, out var leaveRoom,
                 out var endGame, out var roomOnlyOptions);
-            var hud = BuildGameHud(canvasObject.transform, out var hudOptions);
             var password = BuildPasswordModal(canvasObject.transform, out var passwordJoin, out var passwordClose);
+
+            font = gameFont;
+            var hud = BuildGameHud(canvasObject.transform, out var hudOptions);
             var result = BuildResultOverlay(canvasObject.transform);
 
             var serialized = new SerializedObject(controller);
             SetReference(serialized, "menuBackground", background);
+            SetReference(serialized, "loginPanel", login);
             SetReference(serialized, "homePanel", home);
             SetReference(serialized, "createRoomPanel", create);
             SetReference(serialized, "joinRoomPanel", join);
@@ -100,14 +114,17 @@ namespace MechaChameleon.Editor
             SetReference(serialized, "gameHud", hud);
             SetReference(serialized, "passwordModal", password);
             SetReference(serialized, "resultOverlay", result);
+            SetReference(serialized, "authSignInTabButton", authSignInTab);
+            SetReference(serialized, "authSignUpTabButton", authSignUpTab);
+            SetReference(serialized, "authSubmitButton", authSubmit);
             SetReference(serialized, "createRoomButton", homeCreate);
             SetReference(serialized, "joinRoomButton", homeJoin);
             SetReference(serialized, "homeOptionsButton", homeOptions);
+            SetReference(serialized, "homeSignOutButton", homeSignOut);
             SetReference(serialized, "createConfirmButton", createConfirm);
             SetReference(serialized, "createBackButton", createBack);
             SetReference(serialized, "joinBackButton", joinBack);
-            SetReference(serialized, "joinLockedRoomButton", joinLocked);
-            SetReference(serialized, "joinOpenRoomButton", joinOpen);
+            SetReference(serialized, "refreshRoomsButton", joinRefresh);
             SetReference(serialized, "startPreviewButton", roomStart);
             SetReference(serialized, "roomOptionsButton", roomOptions);
             SetReference(serialized, "optionsBackButton", optionsBack);
@@ -120,6 +137,7 @@ namespace MechaChameleon.Editor
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
             home.SetActive(true);
+            login.SetActive(false);
             create.SetActive(false);
             join.SetActive(false);
             room.SetActive(false);
@@ -150,11 +168,60 @@ namespace MechaChameleon.Editor
             return root;
         }
 
-        static GameObject BuildHome(Transform parent, out Button create, out Button join, out Button options)
+        static GameObject BuildLogin(Transform parent, out Button signInTab, out Button signUpTab,
+            out Button submit)
+        {
+            var root = FullPanel("LoginPanel", parent);
+            var board = AddBoard("Account Board", root.transform, new Vector2(900f, 900f), Vector2.zero);
+            AddText("Title", board.transform, "WELCOME BACK", 48, TextAnchor.MiddleCenter, Cream,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 350f),
+                new Vector2(700f, 70f), FontStyle.Bold);
+            AddText("Environment", board.transform, "ONLINE STAGING", 18, TextAnchor.MiddleCenter, Cyan,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 300f),
+                new Vector2(500f, 36f), FontStyle.Bold);
+
+            signInTab = AddWoodButtonAt("Sign In Tab", board.transform, "SIGN IN", new Vector2(-180f, 220f),
+                new Vector2(330f, 74f), 23);
+            signUpTab = AddWoodButtonAt("Sign Up Tab", board.transform, "CREATE ACCOUNT",
+                new Vector2(180f, 220f), new Vector2(330f, 74f), 21);
+
+            AddLabel(board.transform, "USERNAME", new Vector2(0f, 135f));
+            var username = AddInputField(board.transform, "Username", "3-20 CHARACTERS",
+                new Vector2(0f, 78f), false);
+            username.characterLimit = UgsBootstrap.MaxUsernameLength;
+
+            AddLabel(board.transform, "PASSWORD", new Vector2(0f, -5f));
+            var password = AddInputField(board.transform, "Password", "ENTER PASSWORD",
+                new Vector2(0f, -62f), true);
+            password.characterLimit = UgsBootstrap.MaxPasswordLength;
+
+            var confirmGroup = Rect("Confirm Group", board.transform, new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f), new Vector2(-360f, -265f), new Vector2(360f, -115f));
+            AddLabel(confirmGroup.transform, "CONFIRM PASSWORD", new Vector2(0f, 42f));
+            var confirm = AddInputField(confirmGroup.transform, "Confirm Password", "REPEAT PASSWORD",
+                new Vector2(0f, -25f), true);
+            confirm.characterLimit = UgsBootstrap.MaxPasswordLength;
+
+            AddText("Requirements", board.transform,
+                "8-30 CHARACTERS  |  UPPER + LOWER + NUMBER + SPECIAL", 16,
+                TextAnchor.MiddleCenter, Muted, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(0f, -262f), new Vector2(720f, 36f), FontStyle.Bold);
+            AddText("Status", board.transform, "", 17, TextAnchor.MiddleCenter, Coral,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -310f),
+                new Vector2(720f, 50f), FontStyle.Normal);
+            submit = AddWoodButtonAt("Auth Submit", board.transform, "SIGN IN", new Vector2(0f, -380f),
+                new Vector2(430f, 94f), 29);
+
+            confirmGroup.SetActive(false);
+            return root;
+        }
+
+        static GameObject BuildHome(Transform parent, out Button create, out Button join, out Button options,
+            out Button signOut)
         {
             var root = FullPanel("HomePanel", parent);
             AddText("Title", root.transform, "MECHA\nCHAMELEON", 82, TextAnchor.MiddleCenter, Cream,
-                new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -70f), new Vector2(900f, 215f),
+                new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -120f), new Vector2(900f, 215f),
                 FontStyle.Bold);
             AddText("Subtitle", root.transform, "PAINT.  HIDE.  HUNT.", 27, TextAnchor.MiddleCenter, Cyan,
                 new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -265f), new Vector2(700f, 52f),
@@ -175,6 +242,13 @@ namespace MechaChameleon.Editor
             join = AddWoodButton("Join Room Button", menu.transform, "JOIN ROOM", 31);
             options = AddWoodButton("Options Button", menu.transform, "OPTIONS", 31);
 
+            AddText("Account", root.transform, "", 17, TextAnchor.MiddleRight, Cream,
+                new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-285f, -42f),
+                new Vector2(330f, 42f), FontStyle.Bold);
+            signOut = AddWoodButtonAt("Sign Out", root.transform, "SIGN OUT", new Vector2(-135f, -95f),
+                new Vector2(230f, 64f), 18, new Vector2(1f, 1f));
+            signOut.gameObject.SetActive(false);
+
             AddText("Footer", root.transform, "LOCAL MULTIPLAYER", 18, TextAnchor.MiddleCenter,
                 new Color(1f, 1f, 1f, 0.88f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
                 new Vector2(0f, 30f), new Vector2(420f, 42f), FontStyle.Bold);
@@ -188,12 +262,19 @@ namespace MechaChameleon.Editor
             AddSectionTitle(board.transform, "CREATE ROOM");
 
             AddLabel(board.transform, "ROOM NAME", new Vector2(0f, 215f));
-            AddInputField(board.transform, "Room Name", "SUNNY HIDEOUT", new Vector2(0f, 150f), false);
+            var roomName = AddInputField(board.transform, "Room Name", "ENTER A ROOM NAME",
+                new Vector2(0f, 150f), false);
+            roomName.characterLimit = RoomConnector.MaxRoomNameLength;
             AddLabel(board.transform, "ROOM PASSWORD", new Vector2(0f, 55f));
-            AddInputField(board.transform, "Room Password", "OPTIONAL", new Vector2(0f, -10f), true);
+            var roomPassword = AddInputField(board.transform, "Room Password", "OPTIONAL",
+                new Vector2(0f, -10f), true);
+            roomPassword.characterLimit = RoomConnector.MaxPasswordLength;
 
             AddFutureField(board.transform, "MAP", "COZY HOUSE", new Vector2(0f, -125f));
             AddFutureField(board.transform, "CAPACITY", "8 PLAYERS", new Vector2(0f, -225f));
+            AddText("Status", board.transform, "", 17, TextAnchor.MiddleCenter, Coral,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -282f),
+                new Vector2(700f, 38f), FontStyle.Normal);
 
             confirm = AddWoodButtonAt("Create Confirm", board.transform, "CREATE", new Vector2(125f, -345f),
                 new Vector2(360f, 90f), 29);
@@ -202,7 +283,7 @@ namespace MechaChameleon.Editor
             return root;
         }
 
-        static GameObject BuildJoinRoom(Transform parent, out Button back, out Button locked, out Button open)
+        static GameObject BuildJoinRoom(Transform parent, out Button back, out Button refresh)
         {
             var root = FullPanel("JoinRoomPanel", parent);
             var board = AddBoard("Join Room Board", root.transform, new Vector2(1240f, 850f), Vector2.zero);
@@ -211,17 +292,17 @@ namespace MechaChameleon.Editor
             AddText("Discovery", board.transform, "LOCAL ROOMS", 20, TextAnchor.MiddleLeft, Cyan,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(-425f, 238f),
                 new Vector2(360f, 45f), FontStyle.Bold);
-            AddText("Refresh", board.transform, "REFRESH", 18, TextAnchor.MiddleRight, Cream,
-                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(420f, 238f),
-                new Vector2(250f, 45f), FontStyle.Bold);
+            refresh = AddWoodButtonAt("Refresh Button", board.transform, "REFRESH", new Vector2(430f, 238f),
+                new Vector2(220f, 62f), 18);
 
-            open = AddRoomRow(board.transform, "SUNNY HIDEOUT", "2 / 8", "OPEN", 140f);
-            locked = AddRoomRow(board.transform, "LIVING ROOM", "4 / 8", "LOCKED", 5f);
-            AddRoomRow(board.transform, "PAINT PARTY", "1 / 8", "OPEN", -130f);
+            AddRoomRow(board.transform, 145f, 1);
+            AddRoomRow(board.transform, 55f, 2);
+            AddRoomRow(board.transform, -35f, 3);
+            AddRoomRow(board.transform, -125f, 4);
 
-            AddText("List Hint", board.transform, "ROOMS ON THIS DEVICE OR LAN", 17, TextAnchor.MiddleCenter, Muted,
-                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -252f),
-                new Vector2(700f, 40f), FontStyle.Normal);
+            AddText("Status", board.transform, "SEARCHING FOR LOCAL ROOMS...", 17,
+                TextAnchor.MiddleCenter, Muted, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(0f, -225f), new Vector2(700f, 40f), FontStyle.Normal);
             back = AddWoodButtonAt("Join Back", board.transform, "BACK", new Vector2(0f, -355f),
                 new Vector2(300f, 88f), 27);
             return root;
@@ -244,12 +325,11 @@ namespace MechaChameleon.Editor
             AddText("Players Header", playerBoard.transform, "PLAYERS", 32, TextAnchor.MiddleCenter, Cream,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 235f),
                 new Vector2(350f, 55f), FontStyle.Bold);
-            AddPlayerRow(playerBoard.transform, "PLAYER 1", "HOST", "HUNTER", 140f, Yellow);
-            AddPlayerRow(playerBoard.transform, "PLAYER 2", "", "HIDER", 30f, Cyan);
-            AddPlayerRow(playerBoard.transform, "WAITING...", "", "", -80f, Muted);
+            for (var i = 0; i < 8; i++)
+                AddPlayerRow(playerBoard.transform, 155f - i * 50f, i + 1);
             AddText("Hunter Hint", playerBoard.transform, "STAND ON THE YELLOW PAD\nTO VOLUNTEER AS HUNTER", 17,
                 TextAnchor.MiddleCenter, Muted, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-                new Vector2(0f, -205f), new Vector2(340f, 80f), FontStyle.Bold);
+                new Vector2(0f, -250f), new Vector2(340f, 65f), FontStyle.Bold);
 
             start = AddWoodButtonAt("Start Button", root.transform, "START", new Vector2(0f, -425f),
                 new Vector2(430f, 105f), 36);
@@ -349,7 +429,12 @@ namespace MechaChameleon.Editor
             AddText("Room", board.transform, "LIVING ROOM", 20, TextAnchor.MiddleCenter, Cyan,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 103f),
                 new Vector2(450f, 40f), FontStyle.Bold);
-            AddInputField(board.transform, "Join Password", "ENTER PASSWORD", new Vector2(0f, 25f), true, 500f);
+            var password = AddInputField(board.transform, "Join Password", "ENTER PASSWORD",
+                new Vector2(0f, 25f), true, 500f);
+            password.characterLimit = RoomConnector.MaxPasswordLength;
+            AddText("Status", board.transform, "", 16, TextAnchor.MiddleCenter, Coral,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -55f),
+                new Vector2(540f, 36f), FontStyle.Normal);
             close = AddWoodButtonAt("Password Back", board.transform, "BACK", new Vector2(-165f, -145f),
                 new Vector2(270f, 80f), 24);
             join = AddWoodButtonAt("Password Join", board.transform, "JOIN", new Vector2(165f, -145f),
@@ -372,48 +457,53 @@ namespace MechaChameleon.Editor
             return root;
         }
 
-        static Button AddRoomRow(Transform parent, string roomName, string players, string access, float y)
+        static LocalRoomRowView AddRoomRow(Transform parent, float y, int slot)
         {
-            var row = Rect(roomName + " Row", parent, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-                new Vector2(-510f, y - 48f), new Vector2(510f, y + 48f));
+            var row = Rect($"Room Slot {slot}", parent, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(-510f, y - 38f), new Vector2(510f, y + 38f));
             var image = row.AddComponent<Image>();
             image.color = new Color(0.04f, 0.23f, 0.26f, 0.86f);
             var outline = row.AddComponent<Outline>();
             outline.effectColor = new Color(0.35f, 0.79f, 0.72f, 0.35f);
             outline.effectDistance = new Vector2(2f, -2f);
 
-            AddText("Name", row.transform, roomName, 25, TextAnchor.MiddleLeft, Cream,
-                new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(34f, 0f), new Vector2(390f, 96f),
-                FontStyle.Bold);
-            AddText("Players", row.transform, players, 20, TextAnchor.MiddleCenter, Cyan,
-                new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(80f, 0f), new Vector2(170f, 96f),
-                FontStyle.Bold);
-            AddText("Access", row.transform, access, 16, TextAnchor.MiddleCenter,
-                access == "LOCKED" ? Yellow : new Color(0.55f, 1f, 0.72f),
-                new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(260f, 0f), new Vector2(150f, 96f),
-                FontStyle.Bold);
-            return AddWoodButtonAt("Join", row.transform, "JOIN", new Vector2(-100f, 0f),
-                new Vector2(180f, 62f), 20, new Vector2(1f, 0.5f));
+            var roomName = AddText("Name", row.transform, "", 25, TextAnchor.MiddleLeft, Cream,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(-290f, 0f),
+                new Vector2(390f, 70f), FontStyle.Bold);
+            var players = AddText("Players", row.transform, "", 20, TextAnchor.MiddleCenter, Cyan,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(70f, 0f),
+                new Vector2(150f, 70f), FontStyle.Bold);
+            var access = AddText("Access", row.transform, "", 16, TextAnchor.MiddleCenter, Yellow,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(235f, 0f),
+                new Vector2(130f, 70f), FontStyle.Bold);
+            var join = AddWoodButtonAt("Join", row.transform, "JOIN", new Vector2(-100f, 0f),
+                new Vector2(180f, 56f), 20, new Vector2(1f, 0.5f));
+            var view = row.AddComponent<LocalRoomRowView>();
+            view.Configure(roomName, players, access, join);
+            row.SetActive(false);
+            return view;
         }
 
-        static void AddPlayerRow(Transform parent, string playerName, string badge, string role, float y, Color roleColor)
+        static RoomPlayerRowView AddPlayerRow(Transform parent, float y, int slot)
         {
-            var row = Rect(playerName + " Row", parent, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-                new Vector2(-170f, y - 40f), new Vector2(170f, y + 40f));
+            var row = Rect($"Player Slot {slot}", parent, new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f), new Vector2(-170f, y - 21f), new Vector2(170f, y + 21f));
             var image = row.AddComponent<Image>();
-            image.color = new Color(0.04f, 0.23f, 0.26f, playerName == "WAITING..." ? 0.42f : 0.9f);
+            image.color = new Color(0.04f, 0.23f, 0.26f, 0.9f);
 
-            AddText("Name", row.transform, playerName, 20, TextAnchor.MiddleLeft,
-                playerName == "WAITING..." ? Muted : Cream, new Vector2(0f, 0f), new Vector2(0f, 1f),
-                new Vector2(20f, 0f), new Vector2(210f, 80f), FontStyle.Bold);
-            if (!string.IsNullOrEmpty(badge))
-                AddText("Badge", row.transform, badge, 13, TextAnchor.MiddleCenter, Yellow,
-                    new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(40f, 0f),
-                    new Vector2(90f, 80f), FontStyle.Bold);
-            if (!string.IsNullOrEmpty(role))
-                AddText("Role", row.transform, role, 17, TextAnchor.MiddleRight, roleColor,
-                    new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(-18f, 0f),
-                    new Vector2(130f, 80f), FontStyle.Bold);
+            var playerName = AddText("Name", row.transform, "", 18, TextAnchor.MiddleLeft, Cream,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(-72f, 0f),
+                new Vector2(210f, 38f), FontStyle.Bold);
+            var badge = AddText("Badge", row.transform, "", 11, TextAnchor.MiddleCenter, Yellow,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(42f, 0f),
+                new Vector2(75f, 38f), FontStyle.Bold);
+            var role = AddText("Role", row.transform, "", 15, TextAnchor.MiddleRight, Cyan,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(112f, 0f),
+                new Vector2(105f, 38f), FontStyle.Bold);
+            var view = row.AddComponent<RoomPlayerRowView>();
+            view.Configure(playerName, badge, role);
+            row.SetActive(false);
+            return view;
         }
 
         static GameObject AddBoard(string name, Transform parent, Vector2 size, Vector2 position)
@@ -440,7 +530,7 @@ namespace MechaChameleon.Editor
         static void AddLabel(Transform parent, string text, Vector2 position)
         {
             AddText(text + " Label", parent, text, 19, TextAnchor.MiddleLeft, Cyan,
-                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), position + new Vector2(-325f, 0f),
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), position,
                 new Vector2(650f, 38f), FontStyle.Bold);
         }
 
@@ -473,11 +563,11 @@ namespace MechaChameleon.Editor
         static void AddFutureField(Transform parent, string label, string value, Vector2 position)
         {
             AddText(label, parent, label, 18, TextAnchor.MiddleLeft, Muted,
-                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), position + new Vector2(-325f, 0f),
-                new Vector2(180f, 50f), FontStyle.Bold);
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), position + new Vector2(-245f, 0f),
+                new Vector2(160f, 50f), FontStyle.Bold);
             AddText(value, parent, value + "  ·  COMING LATER", 18, TextAnchor.MiddleRight,
                 new Color(Muted.r, Muted.g, Muted.b, 0.72f), new Vector2(0.5f, 0.5f),
-                new Vector2(0.5f, 0.5f), position + new Vector2(120f, 0f), new Vector2(430f, 50f),
+                new Vector2(0.5f, 0.5f), position + new Vector2(95f, 0f), new Vector2(450f, 50f),
                 FontStyle.Bold);
         }
 
@@ -492,7 +582,7 @@ namespace MechaChameleon.Editor
             outline.effectDistance = new Vector2(2f, -2f);
             AddText("Label", segment.transform, text, 19, TextAnchor.MiddleCenter,
                 selected ? DeepTeal : Cream, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero,
-                FontStyle.Bold);
+                FontStyle.Bold, false);
         }
 
         static Slider AddSlider(Transform parent, string name, Vector2 position, float value, float width = 650f)
@@ -585,7 +675,7 @@ namespace MechaChameleon.Editor
             text.font = font;
             text.text = value;
             text.fontSize = fontSize;
-            text.fontStyle = style;
+            text.fontStyle = font == menuFont ? FontStyle.Normal : style;
             text.alignment = alignment;
             text.color = color;
             text.horizontalOverflow = HorizontalWrapMode.Wrap;

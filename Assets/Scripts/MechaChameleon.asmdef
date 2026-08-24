@@ -2,8 +2,11 @@
   "name": "MechaChameleon",
   "rootNamespace": "MechaChameleon",
   "references": [
+    "MechaChameleon.Poses",
+    "MechaChameleon.Rooms",
     "Unity.Netcode.Runtime",
     "Unity.Services.Core",
+    "Unity.Services.Core.Environments",
     "Unity.Services.Authentication",
     "Unity.Services.Multiplayer",
     "Unity.Transport",

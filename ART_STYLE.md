@@ -22,6 +22,14 @@
 - 라이선스: CC0 1.0
 - 자체 생성한 단순 캐릭터, 총, 벽지 텍스처, 나무 바닥 재질
 - baked lightmap, Light Probe, Reflection Probe
+- `Assets/UI/Generated/menu_waterfront_background.png`: 밝은 저폴리 수변 도시 Home 배경
+- `Assets/UI/Generated/wood_button.png`: 투명 배경 honey-oak 버튼 sprite
+- `Assets/UI/Generated/wood_panel.png`: 투명 외곽과 dark-teal 중앙의 나무 panel sprite
+- `Assets/UI/Generated/color_wheel.png`: HSV paint wheel
+- `Assets/UI/Fonts/LilitaOne-Regular.ttf`: 메뉴 전용 chunky display font (SIL OFL 1.1)
+
+생성 UI 자산의 제작 방식은 `Assets/UI/Generated/SOURCE.md`에 기록한다.
+외부 폰트의 출처와 라이선스는 `Assets/UI/Fonts/SOURCE.md`와 `OFL.txt`에 기록한다.
 
 외부 자산을 추가할 때 원본 URL, 버전 또는 다운로드 날짜, 라이선스를 해당 자산 폴더의 `SOURCE.md`에 기록한다.
 
@@ -42,6 +50,7 @@
 - 나무 바닥과 밝은 천장
 - 소파, 의자, 테이블, TV장, 책장, 책상, 침대, 상자, 식물, 램프
 - 큰 가구 사이에 이동 경로와 추격 경로를 남긴다.
+- 새 맵의 geometry, 조명, probe와 props는 해당 `RoomModule/Content` 아래에 둬 다른 room 선택 시 함께 비활성화되게 한다.
 
 가구는 장식이 아니라 플레이 규칙의 일부다. 캐릭터가 기대거나 눕고, 옆이나 아래에 숨을 수 있어야 한다.
 
@@ -73,6 +82,7 @@
 - 눕기는 크기 변경이 아니라 회전과 위치 변화로 표현한다.
 - 헌터는 1인칭이며 단순한 총 모델이 화면 안에서 읽혀야 한다.
 - 다른 플레이어가 보는 카멜레온 크기는 역할에 따라 달라지지 않는다.
+- 새 자세의 visual offset, rotation과 collision volume은 `DefaultPoseCatalog`에서 함께 조정한다.
 
 페인트 색은 조명 아래에서도 알아볼 수 있어야 한다. 현재 캐릭터 페인트 material의 약한 emission을 유지하되 자체 발광 물체처럼 보일 정도로 높이지 않는다.
 
@@ -107,7 +117,9 @@
 
 UI는 게임 화면을 덮는 마케팅 페이지가 아니라 빠른 로컬 파티 도구다.
 
-- 명확한 sans-serif 글꼴
+- Home, Create Room, Join Room, Room, Options, Password에는 굵고 장난감 같은 display font를 사용한다.
+- 메뉴 글자는 크림, 노랑, 청록색과 짙은 청록 outline을 조합해 밝은 배경에서도 읽히게 한다.
+- 게임 HUD와 Result는 빠른 판독을 위해 기존의 명확한 sans-serif 글꼴을 유지한다.
 - 어두운 반투명 panel과 밝은 텍스트
 - 역할은 HUNTER와 HIDER가 색과 텍스트로 함께 구분
 - 위험한 `Leave Room`, `End Game`은 일반 설정과 시각적으로 구분
@@ -136,4 +148,3 @@ UI는 게임 화면을 덮는 마케팅 페이지가 아니라 빠른 로컬 파
 - 조명 문제를 캐릭터 색상만 흰색으로 덮어 해결하기
 - 현재 스타일과 맞지 않는 사실적 PBR 자산 혼합
 - 라이선스가 불명확한 인터넷 자산 추가
-
