@@ -48,6 +48,34 @@ namespace MechaChameleon.Tests
         }
 
         [UnityTest]
+        public IEnumerator JoinRoomKeepsFailureVisibleUntilRefresh()
+        {
+            SceneManager.LoadScene("Mvp");
+            yield return null;
+            yield return null;
+
+            var ui = Object.FindFirstObjectByType<GameUiController>();
+            var connector = Object.FindFirstObjectByType<RoomConnector>();
+            ui.ShowJoinRoom();
+            Assert.IsFalse(connector.JoinLocal(null, ""));
+            var status = GameObject.Find("Game UI Canvas").transform
+                .Find("JoinRoomPanel/Join Room Board/Status").GetComponent<Text>();
+
+            yield return new WaitForSecondsRealtime(0.5f);
+            Assert.AreEqual("That room is no longer available.", status.text);
+
+            ui.SendMessage("RefreshDiscovery");
+            yield return new WaitForSecondsRealtime(0.5f);
+            StringAssert.DoesNotContain("no longer available", status.text);
+
+            Assert.IsFalse(connector.JoinLocal(null, ""));
+            ui.ShowHome();
+            ui.ShowJoinRoom();
+            yield return new WaitForSecondsRealtime(0.5f);
+            StringAssert.DoesNotContain("no longer available", status.text);
+        }
+
+        [UnityTest]
         public IEnumerator HostLocalSpawnsOwnedPlayer()
         {
             SceneManager.LoadScene("Mvp");

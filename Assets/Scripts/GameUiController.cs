@@ -104,6 +104,7 @@ namespace MechaChameleon
         bool hudStateInitialized;
         bool authSignUpMode;
         bool authBusy;
+        bool preserveJoinStatus;
 
         void Awake()
         {
@@ -225,6 +226,7 @@ namespace MechaChameleon
         public void ShowJoinRoom()
         {
             if (!CanUseOnlineMenus()) return;
+            preserveJoinStatus = false;
             GameDiagnostics.Info("ui", "screen_changed", "screen=join_room");
             SetExclusivePanel(joinRoomPanel);
             SetMenuBackground(true);
@@ -557,6 +559,7 @@ namespace MechaChameleon
 
         async void RefreshDiscovery()
         {
+            preserveJoinStatus = false;
             SetText(joinStatusLabel, $"SEARCHING {EnvironmentLabel()} ROOMS...");
             if (connector != null)
                 await connector.RefreshRoomsAsync();
@@ -586,7 +589,7 @@ namespace MechaChameleon
             }
 
             var joinPanelActive = joinRoomPanel != null && joinRoomPanel.activeSelf;
-            if (joinPanelActive)
+            if (joinPanelActive && !preserveJoinStatus)
                 SetText(joinStatusLabel, rooms != null && rooms.Count > 0
                     ? $"{rooms.Count} {EnvironmentLabel()} ROOM{(rooms.Count == 1 ? "" : "S")} FOUND"
                     : $"NO {EnvironmentLabel()} ROOMS FOUND YET");
@@ -677,6 +680,8 @@ namespace MechaChameleon
         void OnConnectorStatusChanged()
         {
             if (connector == null) return;
+            if (joinRoomPanel != null && joinRoomPanel.activeSelf)
+                preserveJoinStatus = true;
             SetText(createStatusLabel, connector.Status);
             SetText(joinStatusLabel, connector.Status);
             SetText(passwordStatusLabel, connector.Status);
