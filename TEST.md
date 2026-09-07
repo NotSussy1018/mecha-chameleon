@@ -29,7 +29,7 @@
 
 파일: `Assets/Tests/PlayMode/LocalHostTests.cs`
 
-현재 16개:
+현재 17개:
 
 1. diagnostics가 Play session의 검색 가능한 프로세스별 파일을 실제로 기록하는지
 2. 로컬 호스트 시작과 owned player 생성
@@ -47,8 +47,9 @@
 14. Home에서 미리 발견한 방이 Join Room의 실제 room row에 표시됨
 15. 호스트가 생성한 방에 입장한 뒤에도 LAN 광고가 3초 만료 시간을 넘어 유지됨
 16. LAN 참가 시 방 광고에 포함된 Unity Transport 포트를 실제 접속에 사용함
+17. Join Room 오류 메시지가 자동 목록 갱신 후에도 유지되고 새로고침/화면 재진입 시 초기화됨
 
-기준선은 EditMode `16/16`, PlayMode `16/16` 통과다.
+직전 검증 기준선은 EditMode `16/16`, PlayMode `16/16` 통과다. 새 Join Room 회귀 테스트를 포함한 PlayMode `17/17` 재검증은 대기 중이다.
 
 ## 3. Unity Test Runner 실행
 
@@ -141,6 +142,7 @@ Cloud Project가 연결되지 않은 현재 단계에서는 실제 Relay 할당�
 - 올바른 비밀번호로 잠긴 방에 참가한다.
 - 잘못된 비밀번호는 Room으로 넘어가지 않고 오류를 표시한다.
 - 사라진 방을 선택하면 Join 화면을 유지한다.
+- 참가/검색 오류와 진행 메시지가 자동 목록 갱신으로 사라지지 않는다. 새로고침이나 Join 화면 재진입 시 이전 메시지가 초기화된다. `JoinRoomKeepsFailureVisibleUntilRefresh`가 오류 유지 및 초기화를 검증한다.
 - 참가 뒤 두 플레이어 모두 같은 인원과 방 정보를 본다.
 
 ### C. Room 권한
